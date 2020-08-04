@@ -1,7 +1,9 @@
 import os
 import re
 import traceback
-import ctypes,sys
+import sys
+import ctypes
+from ctypes import *
 
 STD_INPUT_HANDLE = -10
 STD_OUTPUT_HANDLE = -11
@@ -47,16 +49,40 @@ BACKGROUND_WHITE = 0xf0 # white.
 
 cpu_frequence = 2194000000
 
+class COORD(Structure):
+	_fields_ = [('X', c_short), ('Y', c_short)]
+
+class SMALL_RECT(Structure):
+	_fields_ = [('Left', c_short),
+				('Top', c_short),
+				('Right', c_short),
+				('Bottom', c_short),
+				]
+
+class CONSOLE_SCREEN_BUFFER_INFO(Structure):
+	_fields_ = [('dwSize', COORD),
+				('dwCursorPosition', COORD),
+				('wAttributes', c_uint),
+				('srWindow', SMALL_RECT),
+				('dwMaximumWindowSize', COORD),
+				]
+
 # get handle
 std_out_handle = ctypes.windll.kernel32.GetStdHandle(STD_OUTPUT_HANDLE)
+csbiInfo = CONSOLE_SCREEN_BUFFER_INFO()
+ctypes.windll.kernel32.GetConsoleScreenBufferInfo(std_out_handle, byref(csbiInfo));
+wOldColorAttrs = csbiInfo.wAttributes;
 
 def set_cmd_text_color(color, handle=std_out_handle):
+	sys.stdout.flush()
 	Bool = ctypes.windll.kernel32.SetConsoleTextAttribute(handle, color)
 	return Bool
 
 #reset white
-def resetColor():
-	set_cmd_text_color(FOREGROUND_WHITE|BACKGROUND_DARKSKYBLUE)
+def resetColor(handle=std_out_handle):
+	sys.stdout.flush()
+	Bool = ctypes.windll.kernel32.SetConsoleTextAttribute(handle, wOldColorAttrs)
+	return Bool
 
 def loop_process(arg):
 	loop_flag = False
@@ -312,40 +338,40 @@ def get_process(arg):
 	file.close()
 	return
 
-def task_print(flag,bypassFlag,slot):
+def task_print(flag,bypassFlag,slot,ticks):
 	idx = 0
 	task_id =0
 
-	print("\r\n---- slot:%-5d ----------------------------" % slot)
+	print("\r\n---- slot:%-5d end_ticks:%ld -----------------" % (slot,ticks))
 	print("idx  0    1    2    3    4    5    6    7    8    9   10   11   12   13   14   15   16   17   18   19",end="")
 	for idx in range(0,2):
 		print("\r\n %d " % idx,end="")
 		for task_id in range(0,20):
-			if flag[idx][task_id] == 1:
+			if flag[idx][task_id] == True:
 				pr_temp = 'Y'
-				sys.stdout.flush()
-				set_cmd_text_color(FOREGROUND_RED|BACKGROUND_DARKSKYBLUE)
+				set_cmd_text_color(FOREGROUND_RED|(wOldColorAttrs&0xf0))
 				print(" %s" % pr_temp,end="")
-				sys.stdout.flush()
 				resetColor()
 				print("/%d " % bypassFlag[idx][task_id],end="")
 			else:
 				pr_temp = 'N'
-				sys.stdout.flush()
-				set_cmd_text_color(FOREGROUND_DARKGRAY|BACKGROUND_DARKSKYBLUE)
+				set_cmd_text_color(FOREGROUND_DARKGRAY|(wOldColorAttrs&0xf0))
 				print(" %s" % pr_temp,end="")
-				sys.stdout.flush()
 				resetColor()
 				print("/%d " % bypassFlag[idx][task_id],end="")
 	print("")
 	return
 
 def task_prompt():
+	set_cmd_text_color(FOREGROUND_RED|(wOldColorAttrs&0xf0))
 	print("\r\nDL dependence:")
+	resetColor()
 	print("             |-->PDSCH_TB(1)")
 	print(" CONFIG(0)-->|-->PDSCH_RS_GEN(4)    |-->PDSCH_SYMBOL_TX(3)|")
 	print("             |-->CONTROL_CHANNELS(5)|-------------------->|-->DL_POST(18)")
+	set_cmd_text_color(FOREGROUND_RED|(wOldColorAttrs&0xf0))
 	print("\r\nUL dependence:")
+	resetColor()
 	print("CONFIG(6)        |")
 	print("PUSCH_TB(14)     |")
 	print("PUCCH_RX(15)     |-->UL_POST(19)")
@@ -360,23 +386,26 @@ def task_prompt():
 	print("|------------------------------|")
 	print("| gen | <initiactive generate> |")
 	print("|------------------------------|\r\n")
+	set_cmd_text_color(FOREGROUND_RED|(wOldColorAttrs&0xf0))
+	print('Confirm cmd:',end="")
+	resetColor()
+	print(' cat var.txt | grep "tasksf,[slot_id]" -B 2 -A 1 | grep "taskId\|bypassFlag"\r\n')
 	return
 	
 def task_process(arg):
 	item_start = False
 	prompt_flag = False
 	need_pr = False
-	#task_bypassFlag = [[0 for col in range(2)] for row in range(20)]
-	task_bypassFlag = [[0]*20]*2
-	#task_flag = [[False for col in range(2)] for row in range(20)]
-	task_flag = [[0]*20]*2
-	#task_seq = [[0 for col in range(2)] for row in range(20)]
-	task_seq = [[0]*20]*2
-	idx = [0]*20
+	task_bypassFlag = [[0 for col in range(20)] for row in range(2)]
+	#task_bypassFlag = [[0]*20]*2 不能这样用，见 https://www.cnblogs.com/woshare/p/5823303.html
+	task_flag = [[False for col in range(20)] for row in range(2)]
+	idx = [0 for col in range(20)]
 	slot_list = []
 	task_id = 0
 	cur_slot = 0xffff
 	pr_slot = 0xffff
+	cur_ticks = 0xffff
+	pr_ticks = 0xffff
 	max_slot = 0xffff
 	min_slot = 0xffff
 	stop_slot = 0xffff
@@ -391,7 +420,7 @@ def task_process(arg):
 		elif arg[i] == "-n":
 			check_count = int(arg[i+1])
 			i = i + 2
-		elif arg[i] == "-p":
+		elif arg[i] == "-h":
 			prompt_flag = True
 			break
 		else:
@@ -436,17 +465,17 @@ def task_process(arg):
 				break
 		
 		for m in range(0,20):  #清空上一个slot标记
-			idx[m] = 0
+			idx[m] = 1
 			for n in range(0,2):
 				task_bypassFlag[n][m] = 0
-				task_flag[n][m] = 0
-				task_seq[n][m] = 0
-	
+				task_flag[n][m] = False
+
 		for line in all_lines[-check_count:]:
 			field = line.split(",")
 			if len(field) != 6:
 				continue
 			if field[1] == "0" and field[4] in re_condition:
+				cur_ticks = int(field[0])
 				item_start = True
 			elif item_start != True:
 				continue
@@ -465,14 +494,16 @@ def task_process(arg):
 				if pr_slot != cur_slot and pr_slot != 0xffff:
 					if (need_pr == True) and ((pr_slot < cur_slot and cur_slot > pr_slot + 10) or (pr_slot > cur_slot and pr_slot > cur_slot+10)):
 						#print("--0-- need_pr:%d cur_slot:%d pr_slot:%d task_id:%d" % (need_pr,cur_slot,pr_slot,task_id))
-						task_print(task_flag,task_bypassFlag,pr_slot)
+						task_print(task_flag,task_bypassFlag,pr_slot,pr_ticks)
 						need_pr = False
 					item_start = False
 				else:
-					#print("--1-- need_pr:%d cur_slot:%d pr_slot:%d task_id:%d" % (need_pr,cur_slot,pr_slot,task_id))
+					#print("--10- need_pr:%d cur_slot:%d pr_slot:%d idx[%d]:%d task_flag[%d][%d]:%d %d" % (need_pr,cur_slot,pr_slot,task_id,idx[task_id],idx[task_id],task_id,task_flag[idx[task_id]][task_id],task_flag[idx[task_id]^1][task_id]))
 					idx[task_id] = idx[task_id]^1
 					task_flag[idx[task_id]][task_id] = True
+					#print("--1-- need_pr:%d cur_slot:%d pr_slot:%d idx[%d]:%d task_flag[%d][%d]:%d %d" % (need_pr,cur_slot,pr_slot,task_id,idx[task_id],idx[task_id],task_id,task_flag[idx[task_id]][task_id],task_flag[idx[task_id]^1][task_id]))
 					need_pr = True
+					pr_ticks = cur_ticks
 					if pr_slot == 0xffff:
 						pr_slot = int(field[3])
 						max_slot = pr_slot
@@ -483,16 +514,163 @@ def task_process(arg):
 			elif field[2] == 'bypassFlag':
 				task_bypassFlag[0][task_id] = int(field[3])
 				item_start = False
-				if task_id == 19 and idx[task_id] == 0 and idx[18] == 0:
+				if task_id == 19 and idx[task_id] == 1 and idx[18] == 1:
 					#print("--2-- need_pr:%d cur_slot:%d pr_slot:%d task_id:%d" % (need_pr,cur_slot,pr_slot,task_id))
-					task_print(task_flag,task_bypassFlag,pr_slot)
+					task_print(task_flag,task_bypassFlag,pr_slot,pr_ticks)
 					need_pr = False
 
 		if need_pr == True:
 			#print("--3-- need_pr:%d cur_slot:%d pr_slot:%d task_id:%d" % (need_pr,cur_slot,pr_slot,task_id))
-			task_print(task_flag,task_bypassFlag,pr_slot)
+			task_print(task_flag,task_bypassFlag,pr_slot,pr_ticks)
 			need_pr = False
 	print("--------------------------------------------")
+	file.close()
+	return
+
+def sym_print(pr_nSlotIdx,pr_frame,pr_subframe,pr_slot,sym):
+	nCellIdx = 0;
+
+	for nCellIdx in range(0,2):
+		print('|  %6d  | %5d |  %2d  |  %2d  |  %2d  |' % (pr_nSlotIdx,pr_frame,pr_subframe,pr_slot,nCellIdx),end="")
+		for i in range(0,7):
+			if sym[nCellIdx][i] == True:
+				pr_temp = 'Y'
+				set_cmd_text_color(FOREGROUND_RED|(wOldColorAttrs&0xf0))
+				print("   %s   " % pr_temp,end="")
+				resetColor()
+			else:
+				pr_temp = 'N'
+				set_cmd_text_color(FOREGROUND_DARKGRAY|(wOldColorAttrs&0xf0))
+				print("   %s   " % pr_temp,end="")
+				resetColor()
+			if i != 6:
+				print(" ",end="")
+		print("|")
+	print('-------------------------------------------------------------------------------------------------')
+	
+	return
+
+def sym_prompt():
+	set_cmd_text_color(FOREGROUND_RED|(wOldColorAttrs&0xf0))
+	print('Confirm cmd:',end="")
+	resetColor()
+	print(' cat var.txt |grep "0xBCBCBCBC" -A 7| grep "nCellIdx,[nCellIdx_id]" -A 6 | grep "nSlotIdx,[nSlotIdx_id]" -B 2 | grep "sym"\r\n')
+	return
+
+def sym_process(arg):
+	item_start = False
+	check_count = 0
+	slot_list = []
+	i = 1
+	nCellIdx = 0
+	frame = 0
+	subframe = 0
+	slot = 0
+	nSlotIdx = 0xffff
+	pr_frame = 0xffff
+	pr_subframe = 0xffff
+	pr_slot = 0xffff
+	pr_nSlotIdx = 0xffff
+	sym = [[False for col in range(7)] for row in range(2)]
+	cur_sym = 0
+	slot_flag = False
+
+	while i < len(arg):
+		if arg[i] == "-s":
+			slot_list = arg[i+1].split("&")
+			i = i + 2
+			slot_flag = True
+		elif arg[i] == "-n":
+			check_count = int(arg[i+1])
+			i = i + 2
+		elif arg[i] == "-h":
+			sym_prompt()
+			return
+		else:
+			print("ERROR:parameter error !!! arg[%d]:%s" % (i,arg[i]))
+			return
+
+	try:
+		if(os.path.exists("drive.txt")):
+			os.remove("drive.txt")
+		with open("var.txt", mode='r', encoding='utf-8') as file:
+			all_lines = file.readlines()
+			file.close()
+	except Exception:
+		print(traceback.format_exc())
+		return
+
+	if check_count > len(all_lines) or check_count == 0:
+		check_count = len(all_lines)
+
+	re_condition = '0xBCBCBCBC'
+	print('\r\n-------------------------------------------------------------------------------------------------')
+	print('| nSlotIdx | frame | subf | slot | cell | sym0  | sym2  | sym4  | sym6  | sym8  | sym10 | sym12 |')
+	print('-------------------------------------------------------------------------------------------------')
+	
+	i = 0
+	while True:
+		if 0 == len(slot_list) and i == 1:
+			break
+		if i == len(slot_list) and slot_flag == True:
+			break
+		
+		for line in all_lines[-check_count:]:
+			field = line.split(",")
+			if len(field) != 6:
+				continue
+			if field[1] == "0" and field[4] in re_condition:
+				cur_ticks = int(field[0])
+				item_start = True
+			elif item_start != True:
+				continue
+
+			if field[2] == 'nCellIdx':
+				nCellIdx = int(field[3])
+				continue
+			elif field[2] == 'frame':
+				if pr_frame == 0xffff:
+					pr_frame = frame
+				frame = int(field[3])
+				continue
+			elif field[2] == 'subframe':
+				if pr_subframe == 0xffff:
+					pr_subframe = subframe
+				subframe = int(field[3])
+				continue
+			elif field[2] == 'slot':
+				if pr_slot == 0xffff:
+					pr_slot = slot
+				slot = int(field[3])
+				continue
+			elif field[2] == 'sym':
+				cur_sym = int(field[3])
+				continue
+			elif field[2] == 'nSlotIdx':
+				nSlotIdx = int(field[3])
+				if pr_nSlotIdx == 0xffff:
+					pr_nSlotIdx = nSlotIdx
+				if slot_flag == True:
+					if field[3] == slot_list[i]:
+						pr_nSlotIdx = nSlotIdx
+						pr_frame = frame
+						pr_subframe = subframe
+						pr_slot = slot
+					else:
+						continue
+				if pr_nSlotIdx != nSlotIdx:
+					sym_print(pr_nSlotIdx,pr_frame,pr_subframe,pr_slot,sym)
+					pr_nSlotIdx = nSlotIdx
+					pr_frame = frame
+					pr_subframe = subframe
+					pr_slot = slot
+					for m in range(0,7):  #清空上一个slot标记
+						for n in range(0,2):
+							sym[n][m] = False
+				sym[nCellIdx][int(cur_sym/2)] = True
+				item_start = False
+		i = i+1
+		sym_print(pr_nSlotIdx,pr_frame,pr_subframe,pr_slot,sym)
 	file.close()
 	return
 
@@ -538,6 +716,8 @@ def cmd_parse(cmd):
 		get_process(field)
 	elif field[0] == 'task':
 		task_process(field)
+	elif field[0] == 'sym':
+		sym_process(field)
 	elif field[0] == 'h':
 		print("Usage:")
 		print("---------------")
@@ -553,9 +733,13 @@ def cmd_parse(cmd):
 		print(" -nom: don't display magic world")
 		print(" -nof: don't display function")
 		print("======")
-		print("<CMD>task [-s] [slot num] [-p]")
+		print("<CMD>task [-n] [count] [-s] [slot num] [-h]")
 		print(" -s  : display interval")
-		print(" -p  : display prompt message")
+		print(" -h  : display prompt message")
+		print("======")
+		print("<CMD>sym [-n] [count] [-s] [slot num] [-h]")
+		print(" -s  : display interval")
+		print(" -h  : display prompt message")
 		print("---------------")
 		print("\r\nsuggestion:")
 		print("---------------")
