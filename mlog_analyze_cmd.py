@@ -664,13 +664,22 @@ def sym_process(arg):
 					pr_frame = frame
 					pr_subframe = subframe
 					pr_slot = slot
-					for m in range(0,7):  #清空上一个slot标记
+					
+					#-------- 清空上一个slot标记 --------
+					for m in range(0,7):
 						for n in range(0,2):
 							sym[n][m] = False
+
 				sym[nCellIdx][int(cur_sym/2)] = True
 				item_start = False
 		i = i+1
 		sym_print(pr_nSlotIdx,pr_frame,pr_subframe,pr_slot,sym)
+
+		#-------- 清空上一个slot标记 --------
+		for m in range(0,7):
+			for n in range(0,2):
+				sym[n][m] = False
+
 	file.close()
 	return
 
