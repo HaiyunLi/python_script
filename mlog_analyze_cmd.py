@@ -243,6 +243,7 @@ def get_process(arg):
 	check_count = 0
 	idx = 1
 	magic_list = []
+	key_list = []
 	interval_flag = False
 	interval_time = 0
 	ticks_cur = 0
@@ -251,10 +252,20 @@ def get_process(arg):
 	pr_nofunc = False
 	pr_noticks = False
 	pr_verbose = False
-	
+	key_world = []
+	key_str = []
+	key_vlaue = [0xffff for col in range(20)]
+	key_flag = False
+	index = 0
+	pr_str = ''
+	pr_flag = False
+
 	while idx < len(arg):
 		if arg[idx] == "-m":
 			magic_list = arg[idx+1].split("&")
+			if len(magic_list) < 1:
+				print("ERROR: magic_list parameter error !!! cnt:%d" % len(magic_list))
+				return
 			idx = idx + 2
 		elif arg[idx] == "-n":
 			check_count = int(arg[idx+1])
@@ -274,13 +285,25 @@ def get_process(arg):
 		elif arg[idx] == "-v":
 			idx = idx + 1
 			pr_verbose = True
+		elif arg[idx] == "-k":
+			key_list = arg[idx+1].split(",")
+			if len(key_list) > 20:
+				print("ERROR: key_list parameter error !!! cnt:%d" % len(key_list))
+				return 
+			idx = idx + 2
 		else:
 			print("ERROR:parameter error !!! arg[%d]:%s" % (idx,arg[idx]))
 			return
-
-	if len(magic_list) < 1:
-		print("ERROR:parameter error !!! cnt:%d" % len(magic_list))
-		return
+	
+	i = 0
+	if len(key_list) > 0:
+		key_flag = True
+		for key in key_list:
+			key_world = key.split("=")
+			key_str.append(key_world[0])
+			if len(key_world) > 1:
+				key_vlaue[i] = int(key_world[1])
+			i = i + 1
 
 	try:
 		if(os.path.exists("drive.txt")):
@@ -309,32 +332,46 @@ def get_process(arg):
 			item_start = False
 
 		if item_start == True:
+			if pr_flag == True:
+				print("%s" % pr_str)
+
+			pr_flag = False
+			pr_str = ''
+
 			if pr_noticks == False:
 				if interval_flag == False:
-					print("\n<%s>" % field[0],end="")
+					pr_str = pr_str + "<%s>"%field[0]
 				else:
 					ticks_cur = int(field[0]);
 					if ticks_prv == 0:
 						ticks_prv = ticks_cur
 					interval_time = (ticks_cur - ticks_prv)*1000000/cpu_frequence
-					print("\n[%6dus]<%s>" % (interval_time,field[0]),end="")
+					pr_str = pr_str + "[%6dus]<%s>"%(interval_time,field[0])
 					ticks_prv = ticks_cur
-			else:
-				print("")
+
 			if pr_nomagic == False:
-				print("m:%s" % field[4],end="")
+				pr_str = pr_str + "m:%s"%field[4]
 			if pr_nofunc == False:
-				print(" f:%-20s" % field[2][-20:],end="")
-			print("|",end="")
+				pr_str = pr_str + " f:%-20s"%field[2][-20:]
+			pr_str = pr_str + "|"
 			item_pr = item_pr + 1
+			if key_flag != True:
+				pr_flag = True
 		elif item_pr < 7 and item_pr > 0:
+			if key_flag == True:
+				if field[2] in key_str:
+					index = key_str.index(field[2])
+					if (key_vlaue[index] == int(field[3])) or (key_vlaue[index] == 0xffff):
+						pr_flag = True
+
 			if pr_verbose == False:
-				print("%15s:%-10s|" % (field[2][-15:],field[3]),end="")
+				pr_str = pr_str + "%15s:%-10s|"%(field[2][-15:],field[3])
 				item_pr = item_pr + 1
 			else:
-				print(" %s:%s |" % (field[2][-15:],field[3]),end="")
+				pr_str = pr_str + " %s:%s |"%(field[2][-15:],field[3])
 
-	print("")
+	if pr_flag == True:
+		print("%s" % pr_str)
 	file.close()
 	return
 
@@ -349,16 +386,19 @@ def task_print(flag,bypassFlag,slot,ticks):
 		for task_id in range(0,20):
 			if flag[idx][task_id] == True:
 				pr_temp = 'Y'
-				set_cmd_text_color(FOREGROUND_RED|(wOldColorAttrs&0xf0))
+				set_cmd_text_color(FOREGROUND_GREEN|(wOldColorAttrs&0xf0))
 				print(" %s" % pr_temp,end="")
 				resetColor()
-				print("/%d " % bypassFlag[idx][task_id],end="")
+				print("/",end="")
+				if bypassFlag[idx][task_id] == 1:
+					set_cmd_text_color(FOREGROUND_RED|(wOldColorAttrs&0xf0))
+				print("%d " % bypassFlag[idx][task_id],end="")
+				resetColor()
 			else:
 				pr_temp = 'N'
 				set_cmd_text_color(FOREGROUND_DARKGRAY|(wOldColorAttrs&0xf0))
-				print(" %s" % pr_temp,end="")
+				print(" %s/- " % pr_temp,end="")
 				resetColor()
-				print("/%d " % bypassFlag[idx][task_id],end="")
 	print("")
 	return
 
@@ -446,6 +486,7 @@ def task_process(arg):
 
 	i = 0
 	re_condition = '0x10203040'
+	print('Magic world:0x10203040')
 	while True:
 		if len(slot_list) > 0:
 			if(i == len(slot_list)):
@@ -512,7 +553,7 @@ def task_process(arg):
 
 				continue
 			elif field[2] == 'bypassFlag':
-				task_bypassFlag[0][task_id] = int(field[3])
+				task_bypassFlag[idx[task_id]][task_id] = int(field[3])
 				item_start = False
 				if task_id == 19 and idx[task_id] == 1 and idx[18] == 1:
 					#print("--2-- need_pr:%d cur_slot:%d pr_slot:%d task_id:%d" % (need_pr,cur_slot,pr_slot,task_id))
@@ -523,7 +564,7 @@ def task_process(arg):
 			#print("--3-- need_pr:%d cur_slot:%d pr_slot:%d task_id:%d" % (need_pr,cur_slot,pr_slot,task_id))
 			task_print(task_flag,task_bypassFlag,pr_slot,pr_ticks)
 			need_pr = False
-	print("--------------------------------------------")
+	print("------------------------------------------------------")
 	file.close()
 	return
 
@@ -535,7 +576,7 @@ def sym_print(pr_nSlotIdx,pr_frame,pr_subframe,pr_slot,sym):
 		for i in range(0,7):
 			if sym[nCellIdx][i] == True:
 				pr_temp = 'Y'
-				set_cmd_text_color(FOREGROUND_RED|(wOldColorAttrs&0xf0))
+				set_cmd_text_color(FOREGROUND_GREEN|(wOldColorAttrs&0xf0))
 				print("   %s   " % pr_temp,end="")
 				resetColor()
 			else:
@@ -604,7 +645,8 @@ def sym_process(arg):
 		check_count = len(all_lines)
 
 	re_condition = '0xBCBCBCBC'
-	print('\r\n-------------------------------------------------------------------------------------------------')
+	print('Magic world:0xBCBCBCBC')
+	print('-------------------------------------------------------------------------------------------------')
 	print('| nSlotIdx | frame | subf | slot | cell | sym0  | sym2  | sym4  | sym6  | sym8  | sym10 | sym12 |')
 	print('-------------------------------------------------------------------------------------------------')
 	
@@ -736,11 +778,12 @@ def cmd_parse(cmd):
 		print("======")
 		print("<CMD>loop [-n] [count] [-t]")
 		print("======")
-		print("<CMD>get -m magic_word [-n] [count] [-t] [-not] [-nom] [-nof]")
+		print("<CMD>get -m magic_word [-n] [count] [-t] [-not] [-nom] [-nof] [-k] [key_world=walue,key_world=walue]")
 		print(" -t  : display interval")
 		print(" -not: don't display interval")
 		print(" -nom: don't display magic world")
 		print(" -nof: don't display function")
+		print("   -k: select key world")
 		print("======")
 		print("<CMD>task [-n] [count] [-s] [slot num] [-h]")
 		print(" -s  : display interval")
