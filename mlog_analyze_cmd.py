@@ -380,10 +380,10 @@ def task_print(flag,bypassFlag,slot,ticks):
 	task_id =0
 
 	print("\r\n---- slot:%-5d end_ticks:%ld -----------------" % (slot,ticks))
-	print("idx  0    1    2    3    4    5    6    7    8    9   10   11   12   13   14   15   16   17   18   19",end="")
+	print("idx  0    1    2    3    4    5    6    7    8    9   10   11   12   13   14   15   16   17   18   19   20",end="")
 	for idx in range(0,2):
 		print("\r\n %d " % idx,end="")
-		for task_id in range(0,20):
+		for task_id in range(0,21):
 			if flag[idx][task_id] == True:
 				pr_temp = 'Y'
 				set_cmd_text_color(FOREGROUND_GREEN|(wOldColorAttrs&0xf0))
@@ -432,14 +432,14 @@ def task_prompt():
 	print(' cat var.txt | grep "tasksf,[slot_id]" -B 2 -A 1 | grep "taskId\|bypassFlag"\r\n')
 	return
 	
-def task_process(arg):
+def gen_process(arg):
 	item_start = False
 	prompt_flag = False
 	need_pr = False
-	task_bypassFlag = [[0 for col in range(20)] for row in range(2)]
+	task_bypassFlag = [[0 for col in range(21)] for row in range(2)]
 	#task_bypassFlag = [[0]*20]*2 不能这样用，见 https://www.cnblogs.com/woshare/p/5823303.html
-	task_flag = [[False for col in range(20)] for row in range(2)]
-	idx = [0 for col in range(20)]
+	task_flag = [[False for col in range(21)] for row in range(2)]
+	idx = [0 for col in range(21)]
 	slot_list = []
 	task_id = 0
 	cur_slot = 0xffff
@@ -505,7 +505,7 @@ def task_process(arg):
 			if pr_slot == stop_slot and stop_slot != 0xffff:
 				break
 		
-		for m in range(0,20):  #清空上一个slot标记
+		for m in range(0,21):  #清空上一个slot标记
 			idx[m] = 1
 			for n in range(0,2):
 				task_bypassFlag[n][m] = 0
@@ -765,8 +765,8 @@ def cmd_parse(cmd):
 		dma_process(field)
 	elif field[0] == 'get':
 		get_process(field)
-	elif field[0] == 'task':
-		task_process(field)
+	elif field[0] == 'gen':
+		gen_process(field)
 	elif field[0] == 'sym':
 		sym_process(field)
 	elif field[0] == 'h':
@@ -785,12 +785,12 @@ def cmd_parse(cmd):
 		print(" -nof: don't display function")
 		print("   -k: select key world")
 		print("======")
-		print("<CMD>task [-n] [count] [-s] [slot num] [-h]")
-		print(" -s  : display interval")
+		print("<CMD>gen [-n] [count] [-s] [slot num] [-h]")
+		print(" -s  : display slot")
 		print(" -h  : display prompt message")
 		print("======")
 		print("<CMD>sym [-n] [count] [-s] [slot num] [-h]")
-		print(" -s  : display interval")
+		print(" -s  : display slot")
 		print(" -h  : display prompt message")
 		print("---------------")
 		print("\r\nsuggestion:")
