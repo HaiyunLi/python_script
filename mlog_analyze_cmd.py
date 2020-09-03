@@ -325,6 +325,17 @@ def get_process(arg):
 		if field[1] == "0" and field[4] in magic_list:
 			item_start = True
 			item_pr = 0
+			if pr_flag == True:
+				print("%s" % pr_str.ljust(210))
+				resetColor()
+			if field[4] == "0xBCBCBCBC": # cpa_fh_rx_callback
+				set_cmd_text_color(BACKGROUND_DARKGREEN|(wOldColorAttrs&0x0f))
+			if field[4] == "0x10203040": # bbupool_onetask_gen
+				set_cmd_text_color(BACKGROUND_DARKYELLOW|(wOldColorAttrs&0x0f))
+			if field[4] == "0x64721010": # FhRxValid
+				set_cmd_text_color(BACKGROUND_DARKWHITE|(wOldColorAttrs&0x0f))
+			if field[4] == "0x64720003": # FhTxValid
+				set_cmd_text_color(BACKGROUND_DARKRED|(wOldColorAttrs&0x0f))
 		elif field[1] == "0":
 			item_pr = 0
 			item_start = False
@@ -332,9 +343,11 @@ def get_process(arg):
 			item_start = False
 
 		if item_start == True:
+			'''
 			if pr_flag == True:
 				print("%s" % pr_str)
-
+				resetColor()
+			'''
 			pr_flag = False
 			pr_str = ''
 
@@ -371,11 +384,12 @@ def get_process(arg):
 				pr_str = pr_str + " %s:%s |"%(field[2][-15:],field[3])
 
 	if pr_flag == True:
-		print("%s" % pr_str)
+		print("%s" % pr_str.ljust(210))
+		resetColor()
 	file.close()
 	return
 
-def task_print(flag,bypassFlag,slot,ticks):
+def gen_print(flag,bypassFlag,slot,ticks):
 	idx = 0
 	task_id =0
 
@@ -402,7 +416,7 @@ def task_print(flag,bypassFlag,slot,ticks):
 	print("")
 	return
 
-def task_prompt():
+def gen_prompt():
 	set_cmd_text_color(FOREGROUND_RED|(wOldColorAttrs&0xf0))
 	print("\r\nDL dependence:")
 	resetColor()
@@ -468,7 +482,7 @@ def gen_process(arg):
 			return
 
 	if prompt_flag == True:
-		task_prompt()
+		gen_prompt()
 		return
 
 	try:
@@ -533,9 +547,9 @@ def gen_process(arg):
 						min_slot = cur_slot
 				
 				if pr_slot != cur_slot and pr_slot != 0xffff:
-					if (need_pr == True) and ((pr_slot < cur_slot and cur_slot > pr_slot + 10) or (pr_slot > cur_slot and pr_slot > cur_slot+10)):
+					if (need_pr == True) and ((pr_slot < cur_slot and cur_slot > pr_slot + 30) or (pr_slot > cur_slot and pr_slot > cur_slot+30)):
 						#print("--0-- need_pr:%d cur_slot:%d pr_slot:%d task_id:%d" % (need_pr,cur_slot,pr_slot,task_id))
-						task_print(task_flag,task_bypassFlag,pr_slot,pr_ticks)
+						gen_print(task_flag,task_bypassFlag,pr_slot,pr_ticks)
 						need_pr = False
 					item_start = False
 				else:
@@ -557,12 +571,12 @@ def gen_process(arg):
 				item_start = False
 				if task_id == 19 and idx[task_id] == 1 and idx[18] == 1:
 					#print("--2-- need_pr:%d cur_slot:%d pr_slot:%d task_id:%d" % (need_pr,cur_slot,pr_slot,task_id))
-					task_print(task_flag,task_bypassFlag,pr_slot,pr_ticks)
+					gen_print(task_flag,task_bypassFlag,pr_slot,pr_ticks)
 					need_pr = False
 
 		if need_pr == True:
 			#print("--3-- need_pr:%d cur_slot:%d pr_slot:%d task_id:%d" % (need_pr,cur_slot,pr_slot,task_id))
-			task_print(task_flag,task_bypassFlag,pr_slot,pr_ticks)
+			gen_print(task_flag,task_bypassFlag,pr_slot,pr_ticks)
 			need_pr = False
 	print("------------------------------------------------------")
 	file.close()
@@ -770,7 +784,9 @@ def cmd_parse(cmd):
 	elif field[0] == 'sym':
 		sym_process(field)
 	elif field[0] == 'h':
+		set_cmd_text_color(FOREGROUND_RED|(wOldColorAttrs&0xf0))
 		print("Usage:")
+		resetColor()
 		print("---------------")
 		print("<CMD>dma [-n] [count] [-s] [-nod]")
 		print(" -s  : select slot to display")
@@ -793,7 +809,9 @@ def cmd_parse(cmd):
 		print(" -s  : display slot")
 		print(" -h  : display prompt message")
 		print("---------------")
+		set_cmd_text_color(FOREGROUND_RED|(wOldColorAttrs&0xf0))
 		print("\r\nsuggestion:")
+		resetColor()
 		print("---------------")
 		print("loop start         :0x64720001")
 		print("loop end           :0x6472000B")
@@ -803,6 +821,12 @@ def cmd_parse(cmd):
 		print("bbupool_onetask_gen:0x10203040")
 		print("task_dl_config     :0xCCBBCCBB")
 		print("---------------")
+		set_cmd_text_color(FOREGROUND_DARKRED|BACKGROUND_WHITE)
+		print("check FhTxValid/rx_callback/task_gen cmd:")
+		resetColor()
+		set_cmd_text_color(FOREGROUND_BLACK|BACKGROUND_WHITE)
+		print("    get -m 0x64721010&0x10203040&0xBCBCBCBC -t -k slotid=39,tasksf=39,nSlotIdx=39 -v")
+		resetColor()
 	return
 
 def main():
