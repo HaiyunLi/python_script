@@ -336,6 +336,10 @@ def get_process(arg):
 				set_cmd_text_color(BACKGROUND_DARKWHITE|(wOldColorAttrs&0x0f))
 			if field[4] == "0x64720003": # FhTxValid
 				set_cmd_text_color(BACKGROUND_DARKRED|(wOldColorAttrs&0x0f))
+			if field[4] == "0x50606051": # task begin
+				set_cmd_text_color(BACKGROUND_DARKGRAY|(wOldColorAttrs&0x0f))
+			if field[4] == "0x50606050": # task end
+				set_cmd_text_color(BACKGROUND_DARKBLUE|(wOldColorAttrs&0x0f))
 		elif field[1] == "0":
 			item_pr = 0
 			item_start = False
@@ -389,12 +393,211 @@ def get_process(arg):
 	file.close()
 	return
 
+def task_print(pr_slot,start_ticks,stop_ticks):
+	cell_id = 0
+	task_id =0
+
+	print("\r\n---- slot:%-5d ------------------------------------" % pr_slot)
+	set_cmd_text_color(BACKGROUND_DARKYELLOW|(wOldColorAttrs&0x0f))
+	print("cell  0    1    2    3    4    5    6    7    8    9   10   11   12   13   14   15   16   17   18   19   20",end="")
+	resetColor()
+	for cell_id in range(0,2):
+		print("\r\n %d" % cell_id,end="")
+		for task_id in range(0,21):
+			if start_ticks[cell_id][task_id] == 0:
+				set_cmd_text_color(FOREGROUND_DARKGRAY|(wOldColorAttrs&0xf0))
+				print("    N",end="")
+				resetColor()
+			elif stop_ticks[cell_id][task_id] == 0:
+				set_cmd_text_color(FOREGROUND_RED|(wOldColorAttrs&0xf0))
+				print("    R",end="")
+				resetColor()
+			else:
+				if (start_ticks[cell_id][task_id] == 0xffffffff) and (stop_ticks[cell_id][task_id] == 0xffffffff):
+					set_cmd_text_color(FOREGROUND_GREEN|(wOldColorAttrs&0xf0))
+					print("    B",end="")
+					resetColor()
+				else:
+					print("  %3d" % ((stop_ticks[cell_id][task_id] - start_ticks[cell_id][task_id])/2194),end="")
+	print("")
+	return
+
+def task_prompt():
+	set_cmd_text_color(FOREGROUND_RED|(wOldColorAttrs&0xf0))
+	print("\r\nDL dependence:")
+	resetColor()
+	print("             |-->PDSCH_TB(1)")
+	print(" CONFIG(0)-->|-->PDSCH_RS_GEN(4)    |-->PDSCH_SYMBOL_TX(3)|")
+	print("             |-->CONTROL_CHANNELS(5)|-------------------->|-->DL_POST(18)")
+	set_cmd_text_color(FOREGROUND_RED|(wOldColorAttrs&0xf0))
+	print("\r\nUL dependence:")
+	resetColor()
+	print("CONFIG(6)        |")
+	print("PUSCH_TB(14)     |")
+	print("PUCCH_RX(15)     |-->UL_POST(19)")
+	print("PRACH_PROCESS(16)|")
+	print("SRS_RX(17)       |")
+	print("\r\n               |-->PUSCH_MMSE0(9)-->|PUSCH_SYMBOL_0_RX(11)-->|")
+	print("PUSCH_CE0(7)-->|                    |PUSCH_SYMBOL_7_RX(12)-->|-->PUSCH_LLR_RX(13) gen PUSCH_TB(14)")
+	print("               |-->PUSCH_MMSE7(10)----^")
+	print("PUSCH_CE1(8)--------^\r\n")
+	print("|------------------------------|")
+	print("| --> | <auto generate>        |")
+	print("|------------------------------|")
+	print("| gen | <initiactive generate> |")
+	print("|------------------------------|\r\n")
+	set_cmd_text_color(FOREGROUND_RED|(wOldColorAttrs&0xf0))
+	print('Confirm cmd:',end="")
+	resetColor()
+	print(' cat var.txt | grep "tasksf,[slot_id]" -B 2 -A 1 | grep "taskId\|bypassFlag"\r\n')
+	return
+
+def task_process(arg):
+	item_start = False
+	prompt_flag = False
+	need_pr = False
+	task_id = 0
+	cell_id = 0
+	slot_list = []
+	cur_slot = 0xffff
+	pr_slot = 0xffff
+	max_slot = 0xffff
+	min_slot = 0xffff
+	stop_slot = 0xffff
+	start_ticks_temp = 0
+	stop_ticks_temp = 0 
+	start_ticks = [[0 for col in range(21)] for row in range(2)]
+	stop_ticks = [[0 for col in range(21)] for row in range(2)]
+	i = 1
+	check_count = 0
+
+	while i < len(arg):
+		if arg[i] == "-s":
+			slot_list = arg[i+1].split("&")
+			i = i + 2
+		elif arg[i] == "-n":
+			check_count = int(arg[i+1])
+			i = i + 2
+		elif arg[i] == "-h":
+			prompt_flag = True
+			break
+		else:
+			print("ERROR:parameter error !!! arg[%d]:%s" % (i,arg[i]))
+			return
+
+	if prompt_flag == True:
+		gen_prompt()
+		return
+
+	try:
+		if(os.path.exists("drive.txt")):
+			os.remove("drive.txt")
+		with open("var.txt", mode='r', encoding='utf-8') as file:
+			all_lines = file.readlines()
+			file.close()
+	except Exception:
+		print(traceback.format_exc())
+		return
+
+	if check_count > len(all_lines) or check_count == 0:
+		check_count = len(all_lines)
+
+	i = 0
+	while True:
+		if len(slot_list) > 0:
+			if(i == len(slot_list)):
+				break
+			pr_slot = int(slot_list[i])
+			i = i + 1
+		else:
+			if stop_slot == 0xffff and cur_slot != 0xffff:
+				stop_slot = cur_slot + 1
+			if pr_slot != 0xffff:
+				pr_slot = pr_slot +1
+				if pr_slot == stop_slot:
+					break
+				if pr_slot > max_slot:
+					pr_slot = min_slot
+			if pr_slot == stop_slot and stop_slot != 0xffff:
+				break
+
+		for m in range(0,21):  #清空上一个slot标记
+			for n in range(0,2):
+				start_ticks[n][m] = 0
+				stop_ticks[n][m] = 0
+
+		for line in all_lines[-check_count:]:
+			field = line.split(",")
+			if len(field) != 6:
+				continue
+			if field[1] == "0":
+				if field[4] == '0x50606051':
+					start_ticks_temp = int(field[0])
+					item_start = True
+				elif field[4] == '0x50606050':
+					stop_ticks_temp = int(field[0])
+					item_start = True
+				elif field[4] == '0x50606052':
+					start_ticks_temp = 0xffffffff
+					stop_ticks_temp = 0xffffffff
+				else:
+					item_start = False
+				continue
+			elif item_start != True:
+				continue
+
+			if field[2] == 'nTaskType':
+				task_id = int(field[3])
+				continue
+			elif field[2] == 'subframe':
+				cur_slot = int(field[3])
+				if max_slot != 0xffff:
+					if cur_slot > max_slot:
+						max_slot = cur_slot
+					if cur_slot < min_slot:
+						min_slot = cur_slot
+				if pr_slot == 0xffff:
+						pr_slot = cur_slot
+						max_slot = pr_slot
+						min_slot = pr_slot
+				#'''
+				item_start = False
+				if cur_slot == pr_slot:
+					if start_ticks_temp != 0:
+						start_ticks[cell_id][task_id] = start_ticks_temp
+						start_ticks_temp = 0
+					if stop_ticks_temp != 0:
+						stop_ticks[cell_id][task_id] = stop_ticks_temp
+						stop_ticks_temp = 0
+					need_pr = True
+				#'''
+				continue
+			elif field[2] == 'cellIdx':
+				cell_id = int(field[3])
+				item_start = False
+				if cur_slot == pr_slot:
+					if start_ticks_temp != 0:
+						start_ticks[cell_id][task_id] = start_ticks_temp
+						start_ticks_temp = 0
+					if stop_ticks_temp != 0:
+						stop_ticks[cell_id][task_id] = stop_ticks_temp
+						stop_ticks_temp = 0
+					need_pr = True
+		if need_pr == True:
+			task_print(pr_slot,start_ticks,stop_ticks)
+			need_pr = False
+	print("------------------------------------------------------")
+	file.close()
+	return
+
 def gen_print(flag,bypassFlag,slot,ticks):
 	idx = 0
 	task_id =0
 
 	print("\r\n---- slot:%-5d end_ticks:%ld -----------------" % (slot,ticks))
-	print("idx  0    1    2    3    4    5    6    7    8    9   10   11   12   13   14   15   16   17   18   19   20",end="")
+	set_cmd_text_color(BACKGROUND_DARKYELLOW|(wOldColorAttrs&0x0f))
+	print("idx  0    1    2    3    4    5    6    7    8    9   10   11   12   13   14   15   16   17   18   19   20 ",end="")
+	resetColor()
 	for idx in range(0,2):
 		print("\r\n %d " % idx,end="")
 		for task_id in range(0,21):
@@ -508,17 +711,18 @@ def gen_process(arg):
 			pr_slot = int(slot_list[i])
 			i = i + 1
 		else:
-			if stop_slot == 0xffff and pr_slot != 0xffff:
-				if pr_slot != min_slot:
-					stop_slot = pr_slot
+			if stop_slot == 0xffff and cur_slot != 0xffff:
+				stop_slot = cur_slot + 1
 
 			if pr_slot != 0xffff:
 				pr_slot = pr_slot +1
+				if pr_slot == stop_slot:
+					break
 				if pr_slot > max_slot:
 					pr_slot = min_slot
 			if pr_slot == stop_slot and stop_slot != 0xffff:
 				break
-		
+		#print("max_slot:%d min_slot:%d stop_slot:%d pr_slot:%d" % (max_slot,min_slot,stop_slot,pr_slot))
 		for m in range(0,21):  #清空上一个slot标记
 			idx[m] = 1
 			for n in range(0,2):
@@ -532,6 +736,7 @@ def gen_process(arg):
 			if field[1] == "0" and field[4] in re_condition:
 				cur_ticks = int(field[0])
 				item_start = True
+				continue
 			elif item_start != True:
 				continue
 
@@ -781,6 +986,8 @@ def cmd_parse(cmd):
 		get_process(field)
 	elif field[0] == 'gen':
 		gen_process(field)
+	elif field[0] == 'task':
+		task_process(field)
 	elif field[0] == 'sym':
 		sym_process(field)
 	elif field[0] == 'h':
@@ -820,6 +1027,8 @@ def cmd_parse(cmd):
 		print("cpa_fh_rx_callback :0xBCBCBCBC")
 		print("bbupool_onetask_gen:0x10203040")
 		print("task_dl_config     :0xCCBBCCBB")
+		print("task begin         :0x50606051")
+		print("task end           :0x50606050")
 		print("---------------")
 		set_cmd_text_color(FOREGROUND_DARKRED|BACKGROUND_WHITE)
 		print("check FhTxValid/rx_callback/task_gen cmd:")
