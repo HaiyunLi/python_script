@@ -424,32 +424,9 @@ def task_print(pr_slot,start_ticks,stop_ticks):
 
 def task_prompt():
 	set_cmd_text_color(FOREGROUND_RED|(wOldColorAttrs&0xf0))
-	print("\r\nDL dependence:")
-	resetColor()
-	print("             |-->PDSCH_TB(1)")
-	print(" CONFIG(0)-->|-->PDSCH_RS_GEN(4)    |-->PDSCH_SYMBOL_TX(3)|")
-	print("             |-->CONTROL_CHANNELS(5)|-------------------->|-->DL_POST(18)")
-	set_cmd_text_color(FOREGROUND_RED|(wOldColorAttrs&0xf0))
-	print("\r\nUL dependence:")
-	resetColor()
-	print("CONFIG(6)        |")
-	print("PUSCH_TB(14)     |")
-	print("PUCCH_RX(15)     |-->UL_POST(19)")
-	print("PRACH_PROCESS(16)|")
-	print("SRS_RX(17)       |")
-	print("\r\n               |-->PUSCH_MMSE0(9)-->|PUSCH_SYMBOL_0_RX(11)-->|")
-	print("PUSCH_CE0(7)-->|                    |PUSCH_SYMBOL_7_RX(12)-->|-->PUSCH_LLR_RX(13) gen PUSCH_TB(14)")
-	print("               |-->PUSCH_MMSE7(10)----^")
-	print("PUSCH_CE1(8)--------^\r\n")
-	print("|------------------------------|")
-	print("| --> | <auto generate>        |")
-	print("|------------------------------|")
-	print("| gen | <initiactive generate> |")
-	print("|------------------------------|\r\n")
-	set_cmd_text_color(FOREGROUND_RED|(wOldColorAttrs&0xf0))
 	print('Confirm cmd:',end="")
 	resetColor()
-	print(' cat var.txt | grep "tasksf,[slot_id]" -B 2 -A 1 | grep "taskId\|bypassFlag"\r\n')
+	print(' get -m 0x50606050&0x50606051 -k subframe=<slot_id> -t\r\n')
 	return
 
 def task_process(arg):
@@ -486,7 +463,7 @@ def task_process(arg):
 			return
 
 	if prompt_flag == True:
-		gen_prompt()
+		task_prompt()
 		return
 
 	try:
@@ -540,6 +517,7 @@ def task_process(arg):
 				elif field[4] == '0x50606052':
 					start_ticks_temp = 0xffffffff
 					stop_ticks_temp = 0xffffffff
+					item_start = True
 				else:
 					item_start = False
 				continue
@@ -560,7 +538,7 @@ def task_process(arg):
 						pr_slot = cur_slot
 						max_slot = pr_slot
 						min_slot = pr_slot
-				#'''
+				'''
 				item_start = False
 				if cur_slot == pr_slot:
 					if start_ticks_temp != 0:
@@ -570,7 +548,7 @@ def task_process(arg):
 						stop_ticks[cell_id][task_id] = stop_ticks_temp
 						stop_ticks_temp = 0
 					need_pr = True
-				#'''
+				'''
 				continue
 			elif field[2] == 'cellIdx':
 				cell_id = int(field[3])
@@ -583,6 +561,9 @@ def task_process(arg):
 						stop_ticks[cell_id][task_id] = stop_ticks_temp
 						stop_ticks_temp = 0
 					need_pr = True
+				else:
+					start_ticks_temp = 0
+					stop_ticks_temp = 0
 		if need_pr == True:
 			task_print(pr_slot,start_ticks,stop_ticks)
 			need_pr = False
@@ -768,7 +749,6 @@ def gen_process(arg):
 						pr_slot = int(field[3])
 						max_slot = pr_slot
 						min_slot = pr_slot
-						stop_slot = pr_slot
 
 				continue
 			elif field[2] == 'bypassFlag':
@@ -1041,6 +1021,7 @@ def cmd_parse(cmd):
 def main():
 	#cmd_welcome()
 	while True:
+		resetColor()
 		str = input("<cmd>")
 		try:
 			cmd_parse(str)
